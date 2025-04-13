@@ -4,7 +4,7 @@ import cv2
 from verifier.countries.ca import Verifier
 
 
-def extractData( image_path, reader, userData ):
+def extractData( image_path, docType, reader ):
     image_path = os.path.abspath( image_path )
     image = cv2.imread(image_path)
     gray = cv2.cvtColor( image, cv2.COLOR_BGR2GRAY )
@@ -16,16 +16,18 @@ def extractData( image_path, reader, userData ):
         for t in text:
             print( t )
         verifier = Verifier()
-        result = verifier.verify( text, userData ) #Driver's License
-        print( result["idInfo"] )
+        result = verifier.extractData( text, docType )
+        print( result )
 
 reader = easyocr.Reader(['en'], gpu=False)
 for item in [
-    {"path": "philong.jpeg", "docType": "DL"}, 
-    {"path": "brenda.jpeg", "docType": "DL"}
+        #{"path": "philong.jpeg", "docType": "DL"}, 
+        #{"path": "brenda.jpeg", "docType": "DL"},
+        {"path": "examples/Hope Mwebaze-Passport.jpeg", "docType": "PP"},
+        #{"path": "examples/Batanda Ziwa Mohamed - PermResCard.jpeg", "docType": "PRC"},
     ]:
     print( "\n" )
     print( item["path"] )
-    extractData( item["path"], reader, item )
+    extractData( item["path"], item['docType'], reader )
 
 

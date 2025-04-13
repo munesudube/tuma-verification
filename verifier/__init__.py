@@ -79,6 +79,8 @@ class Verifier:
             return result
 
         textData = self.extractText( idImagePath )
+        deleteFile( idImagePath )
+
         if not textData:
             result["message"] = "No text extracted from ID image"
             return result
@@ -91,9 +93,9 @@ class Verifier:
             result["data"] = _result
         except ModuleNotFoundError:
             pass
-
+        
         result["success"] = True
-        result["message"] = "Data extracted successfully"
+        result["message"] = "Data extracted successfully"        
         return result
 
     def verify( self, idImageUri, selfieUri ):
@@ -102,19 +104,27 @@ class Verifier:
         selfiePath = download_image( selfieUri )
         if not idImagePath or not selfiePath:
             result["message"] = "ID or selfie file does not exist"
+            deleteFile( idImagePath )
+            deleteFile( selfiePath )
             return result
 
         face = self.detectFace( selfiePath )
         if face is None:
             result["message"] = "Face not detected on selfie"
+            deleteFile( idImagePath )
+            deleteFile( selfiePath )
             return result
 
         idFace = self.detectFace( idImagePath )
         if idFace is None:
             result["message"] = "Face not detected on ID"
+            deleteFile( idImagePath )
+            deleteFile( selfiePath )
             return result
 
         result["verified"] = DeepFace.verify( idImagePath, selfiePath )["verified"]
+        deleteFile( idImagePath )
+        deleteFile( selfiePath )
         result["message"] = "Selfie matches ID" if result["verified"] else "Selfie does not match ID Image"
         return result
 
