@@ -6,9 +6,35 @@ import easyocr
 import importlib
 import urllib.request
 import uuid
-
+from PIL import Image, ExifTags
 
 ocrReader = easyocr.Reader(['en'], gpu=False, verbose=False)
+
+def fix_orientation(image_path):
+    image = Image.open(image_path)
+
+    try:
+        exif = image._getexif()
+        if exif is not None:
+            # Find the orientation tag (usually 274)
+            for tag, value in ExifTags.TAGS.items():
+                if value == 'Orientation':
+                    orientation_tag = tag
+                    break
+
+            orientation = exif.get(orientation_tag)
+
+            if orientation == 3:
+                image = image.rotate(180, expand=True)
+            elif orientation == 6:
+                image = image.rotate(270, expand=True)
+            elif orientation == 8:
+                image = image.rotate(90, expand=True)
+    except Exception as e:
+        print("Orientation correction failed:", e)
+
+    return image
+
 
 def getFileExtensionFromUrl( url ):
     return url.split( "." )[-1]
@@ -21,11 +47,20 @@ def download_image(url):
     try:
         urllib.request.urlretrieve(url, filename)
         if os.path.exists(filename) and os.path.getsize(filename) > 0:
+            image = fix_orientation( filename )
+            image.save( filename )
             return filename
         else:
             return False
     except Exception:
         return False
+
+def saveFaceImage( image, filePath ):
+    dirname = os.path.dirname( filePath )
+    filename = "face-" + os.path.splitext(os.path.basename(filePath))[0]
+    filePath = os.path.join( dirname, filename + ".jpg" )
+    print( filePath )
+    cv2.imwrite( filePath, image )
 
 def generateRandomFileName( extension ):
     return f"{uuid.uuid4()}.{extension}"
@@ -122,7 +157,17 @@ class Verifier:
             deleteFile( selfiePath )
             return result
 
-        result["verified"] = DeepFace.verify( idImagePath, selfiePath )["verified"]
+        #saveFaceImage( idFace, idImagePath )
+        #saveFaceImage( face, selfiePath )
+
+        try:
+            result["verified"] = DeepFace.verify( idImagePath, selfiePath )["verified"]
+        except Exception as e:
+            deleteFile( idImagePath )
+            deleteFile( selfiePath )
+            result["message"] = "Face not detected on ID. Make sure it is clear/upright"
+            return result
+
         deleteFile( idImagePath )
         deleteFile( selfiePath )
         result["message"] = "Selfie matches ID" if result["verified"] else "Selfie does not match ID Image"
@@ -172,6 +217,9 @@ class Verifier:
         idFace = self.detectFace( idImagePath )
         selfieFace = self.detectFace( selfiePath )
 
+        saveFaceImage( idFace, idImagePath )
+        saveFaceImage( selfieFace, selfiePath )
+        
         if idFace is None:
             result["message"] = "Face not detected on ID"
             return result
