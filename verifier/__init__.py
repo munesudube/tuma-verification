@@ -6,35 +6,11 @@ import easyocr
 import importlib
 import urllib.request
 import uuid
+from PIL import Image
+import numpy as np
 from PIL import Image, ExifTags
 
 ocrReader = easyocr.Reader(['en'], gpu=False, verbose=False)
-
-def fix_orientation(image_path):
-    image = Image.open(image_path)
-
-    try:
-        exif = image._getexif()
-        if exif is not None:
-            # Find the orientation tag (usually 274)
-            for tag, value in ExifTags.TAGS.items():
-                if value == 'Orientation':
-                    orientation_tag = tag
-                    break
-
-            orientation = exif.get(orientation_tag)
-
-            if orientation == 3:
-                image = image.rotate(180, expand=True)
-            elif orientation == 6:
-                image = image.rotate(270, expand=True)
-            elif orientation == 8:
-                image = image.rotate(90, expand=True)
-    except Exception as e:
-        print("Orientation correction failed:", e)
-
-    return image
-
 
 def getFileExtensionFromUrl( url ):
     return url.split( "." )[-1]
@@ -47,28 +23,80 @@ def download_image(url):
     try:
         urllib.request.urlretrieve(url, filename)
         if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            image = fix_orientation( filename )
-            image.save( filename )
             return filename
         else:
             return False
     except Exception:
         return False
+    
+def prepare_image_for_deepface(image_path):
+    try:
+        image = Image.open(image_path)
 
-def saveFaceImage( image, filePath ):
-    dirname = os.path.dirname( filePath )
-    filename = "face-" + os.path.splitext(os.path.basename(filePath))[0]
-    filePath = os.path.join( dirname, filename + ".jpg" )
-    print( filePath )
-    cv2.imwrite( filePath, image )
+        # --- Fix orientation ---
+        """try:
+            exif = image._getexif()
+            if exif:
+                orientation_key = next(
+                    (key for key, val in ExifTags.TAGS.items() if val == 'Orientation'),
+                    None
+                )
+                if orientation_key and orientation_key in exif:
+                    orientation = exif[orientation_key]
+                    if orientation == 3:
+                        image = image.rotate(180, expand=True)
+                    elif orientation == 6:
+                        image = image.rotate(270, expand=True)
+                    elif orientation == 8:
+                        image = image.rotate(90, expand=True)
+        except Exception as e:
+            print("Orientation fix skipped:", e)"""
+        
+        if image.width > 1600 or image.height > 1600: 
+            #pass
+            #print( f"Width: { image.width }, Height: { image.height }" )
+            val = max( max( image.width, image.height ) // 3, 800 )
+            #print( f"MAX VALUE = { val }" )
+            image.thumbnail((val, val))  # Keeps face detail
+            #print( f"Width: { image.width }, Height: { image.height }" )
+            #image.thumbnail( (3500, 3500), Image.Resampling.LANCZOS )  # Keeps face detail
+
+        # --- Resize if needed ---
+        #image.thumbnail(max_size)
+
+        # --- Convert to RGB ---
+        image = image.convert("RGB")
+
+        #temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        #image.save(temp_file.name, format="JPEG")
+        #return temp_file.name
+        return np.array(image)
+
+    except Exception as e:
+        print("Failed to prepare image:", e)
+        return None
 
 def generateRandomFileName( extension ):
     return f"{uuid.uuid4()}.{extension}"
 
 def deleteFile( path ):
-    if os.path.exists( path ):
+    if (path is not None) and os.path.exists( path ) and False:
         os.remove( path )
+        
+def has_necessary_exif( image_path ):
+    try:
+        image = Image.open(image_path)
+        exif = image._getexif()
+        if not exif:
+            return False
 
+        exif_data = {ExifTags.TAGS.get(tag): value for tag, value in exif.items() if tag in ExifTags.TAGS}
+
+        required_tags = ["ImageWidth", "ImageLength", "Orientation"]
+        return all(tag in exif_data for tag in required_tags)
+    except Exception as e:
+        print("Error reading EXIF:", e)
+        return False
 
 class Verifier:
     def defaultResult( self ):
@@ -157,16 +185,27 @@ class Verifier:
             deleteFile( selfiePath )
             return result
 
-        #saveFaceImage( idFace, idImagePath )
-        #saveFaceImage( face, selfiePath )
+        for img in [selfiePath, idImagePath]:
+            if not has_necessary_exif( img ):
+                imgType = "selfie" if img == selfiePath else "id"
+                result["message"] = f"Ensure { imgType } image was taken by your camera"
+                return result
 
         try:
-            result["verified"] = DeepFace.verify( idImagePath, selfiePath )["verified"]
+            #idImage = prepare_image( idImagePath )
+            #selfie = prepare_image( selfiePath )
+            idImage = prepare_image_for_deepface( idImagePath )
+            selfie = prepare_image_for_deepface( selfiePath )
+            result["verified"] = DeepFace.verify( idImage, selfie, enforce_detection = False )["verified"]
         except Exception as e:
+            print( "MUNESU ---->", e )
+            print( idImagePath )
+            print( selfiePath )
             deleteFile( idImagePath )
             deleteFile( selfiePath )
-            result["message"] = "Face not detected on ID. Make sure it is clear/upright"
+            result["message"] = "Face not detected on ID/Selfie. Make sure they are both clear/upright"
             return result
+
 
         deleteFile( idImagePath )
         deleteFile( selfiePath )
