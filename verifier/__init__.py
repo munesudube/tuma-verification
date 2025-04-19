@@ -188,8 +188,9 @@ class Verifier:
         for img in [selfiePath, idImagePath]:
             if not has_necessary_exif( img ):
                 imgType = "selfie" if img == selfiePath else "id"
-                result["message"] = f"Ensure { imgType } image was taken by your camera"
-                return result
+                #result["message"] = f"Ensure { imgType } image was taken by your camera"
+                #return result
+                
 
         try:
             #idImage = prepare_image( idImagePath )
